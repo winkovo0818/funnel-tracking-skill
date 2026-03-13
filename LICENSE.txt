@@ -1,0 +1,5 @@
+This local skill package is provided for use inside this project workspace.
+
+You may modify, adapt, and reuse the contents within this repository or your local OpenCode skill directory.
+
+Before publishing outside this project, verify that any embedded examples, field names, or workflow notes do not disclose private business details.
