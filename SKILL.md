@@ -1116,6 +1116,362 @@ trackEvent({
 - 建议每月导出数据备份到对象存储
 - Webhook URL 需要保密，建议通过环境变量配置
 
+### 4. 飞书多维表格自动创建（可选）
+
+如果你不想手动创建飞书多维表格，可以使用飞书开放平台 API 自动创建表格和字段。
+
+#### 前置条件
+
+1. **创建飞书应用**
+   - 访问 [飞书开放平台](https://open.feishu.cn/)
+   - 创建企业自建应用
+   - 获取 `app_id` 和 `app_secret`
+
+2. **配置应用权限**
+   - 添加权限：`bitable:bitable`（读写多维表格）
+   - 添加权限：`automation:automation`（创建自动化工作流，可选）
+   - 发布应用版本并在企业内启用
+
+3. **准备目标多维表格**
+   - 选项 A：提供已有多维表格的 `app_token`（从 URL 中获取）
+   - 选项 B：让 AI 自动创建新的多维表格
+
+#### 用户输入示例
+
+```text
+我想自动创建飞书多维表格来存储埋点数据。
+
+飞书应用配置：
+app_id: cli_a1b2c3d4e5f6g7h8
+app_secret: xxxxxxxxxxxxxxxxxxxx
+
+业务流程：
+1. 访问首页（visit）
+2. 登录（login_success）
+3. 开始测评（assessment_start）
+4. 完成测评（assessment_complete）
+5. 提交结果（submit_success / submit_fail）
+
+选项：创建新的多维表格（或提供已有的 app_token）
+```
+
+#### AI 自动化流程
+
+当你提供飞书应用配置后，AI 会：
+
+1. **获取访问令牌**
+   ```javascript
+   // 使用 app_id 和 app_secret 获取 tenant_access_token
+   POST https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal/
+   ```
+
+2. **创建多维表格**（如果需要）
+   ```javascript
+   // 创建新的多维表格文档
+   POST https://open.feishu.cn/open-apis/bitable/v1/apps
+   {
+     "name": "埋点数据收集",
+     "folder_token": "fldxxxxxx" // 可选，指定存放位置
+   }
+   ```
+
+3. **创建 event_logs 表**
+   ```javascript
+   // 在多维表格中创建表
+   POST https://open.feishu.cn/open-apis/bitable/v1/apps/{app_token}/tables
+   {
+     "table": {
+       "name": "event_logs",
+       "default_view_name": "全部事件"
+     }
+   }
+   ```
+
+4. **批量添加字段**
+   ```javascript
+   // 添加所有 23 个字段
+   POST https://open.feishu.cn/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/fields
+
+   // 示例：添加 event_name 单选字段
+   {
+     "field_name": "event_name",
+     "type": 3, // 单选
+     "property": {
+       "options": [
+         { "name": "visit" },
+         { "name": "login_success" },
+         { "name": "assessment_start" },
+         { "name": "assessment_complete" },
+         { "name": "submit_success" },
+         { "name": "submit_fail" }
+       ]
+     }
+   }
+   ```
+
+5. **创建 Webhook 工作流**（可选）
+   ```javascript
+   // 创建自动化工作流
+   POST https://open.feishu.cn/open-apis/automation/v1/workflows
+   {
+     "name": "埋点数据写入",
+     "trigger_type": "webhook",
+     "actions": [
+       {
+         "type": "add_record",
+         "table_id": "{table_id}",
+         "field_mapping": { /* 字段映射 */ }
+       }
+     ]
+   }
+   ```
+
+6. **返回配置信息**
+   ```text
+   ✅ 飞书多维表格创建成功！
+
+   多维表格 URL: https://xxx.feishu.cn/base/xxxxx
+   Webhook URL: https://open.feishu.cn/open-apis/bot/v2/hook/xxxxx
+   Webhook Token: xxxxx
+
+   请将以下配置添加到环境变量：
+   FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/xxxxx
+   FEISHU_WEBHOOK_TOKEN=xxxxx
+   ```
+
+#### 完整实现示例
+
+```typescript
+import axios from 'axios';
+
+// 飞书 API 配置
+const FEISHU_APP_ID = process.env.FEISHU_APP_ID;
+const FEISHU_APP_SECRET = process.env.FEISHU_APP_SECRET;
+
+// 字段类型映射
+const FIELD_TYPE_MAP = {
+  text: 1,        // 文本
+  number: 2,      // 数字
+  select: 3,      // 单选
+  multiSelect: 4, // 多选
+  date: 5,        // 日期
+  checkbox: 7,    // 复选框
+  user: 11,       // 人员
+  phone: 13,      // 电话
+  url: 15,        // 超链接
+  attachment: 17, // 附件
+  formula: 20,    // 公式
+  location: 22,   // 地理位置
+};
+
+// 获取 tenant_access_token
+async function getTenantAccessToken() {
+  const response = await axios.post(
+    'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal/',
+    {
+      app_id: FEISHU_APP_ID,
+      app_secret: FEISHU_APP_SECRET,
+    }
+  );
+  return response.data.tenant_access_token;
+}
+
+// 创建多维表格
+async function createBitable(token: string, name: string) {
+  const response = await axios.post(
+    'https://open.feishu.cn/open-apis/bitable/v1/apps',
+    { name },
+    {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    }
+  );
+  return response.data.data.app;
+}
+
+// 创建表
+async function createTable(token: string, appToken: string, tableName: string) {
+  const response = await axios.post(
+    `https://open.feishu.cn/open-apis/bitable/v1/apps/${appToken}/tables`,
+    {
+      table: {
+        name: tableName,
+        default_view_name: '全部事件',
+      },
+    },
+    {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    }
+  );
+  return response.data.data.table_id;
+}
+
+// 添加字段
+async function addField(
+  token: string,
+  appToken: string,
+  tableId: string,
+  field: {
+    name: string;
+    type: number;
+    property?: any;
+  }
+) {
+  const response = await axios.post(
+    `https://open.feishu.cn/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/fields`,
+    {
+      field_name: field.name,
+      type: field.type,
+      property: field.property,
+    },
+    {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    }
+  );
+  return response.data.data.field;
+}
+
+// 完整创建流程
+async function setupFeishuBitable() {
+  console.log('1. 获取访问令牌...');
+  const token = await getTenantAccessToken();
+
+  console.log('2. 创建多维表格...');
+  const bitable = await createBitable(token, '埋点数据收集');
+  const appToken = bitable.app_token;
+  console.log(`   多维表格 URL: https://xxx.feishu.cn/base/${appToken}`);
+
+  console.log('3. 创建 event_logs 表...');
+  const tableId = await createTable(token, appToken, 'event_logs');
+
+  console.log('4. 添加字段...');
+
+  // 添加文本字段
+  await addField(token, appToken, tableId, {
+    name: 'event_id',
+    type: FIELD_TYPE_MAP.text,
+  });
+
+  // 添加日期字段
+  await addField(token, appToken, tableId, {
+    name: 'event_time',
+    type: FIELD_TYPE_MAP.date,
+    property: {
+      date_format: 'yyyy-MM-dd HH:mm:ss',
+    },
+  });
+
+  // 添加单选字段
+  await addField(token, appToken, tableId, {
+    name: 'event_name',
+    type: FIELD_TYPE_MAP.select,
+    property: {
+      options: [
+        { name: 'visit' },
+        { name: 'login_success' },
+        { name: 'assessment_start' },
+        { name: 'assessment_complete' },
+        { name: 'submit_success' },
+        { name: 'submit_fail' },
+      ],
+    },
+  });
+
+  // 添加数字字段
+  await addField(token, appToken, tableId, {
+    name: 'step_order',
+    type: FIELD_TYPE_MAP.number,
+  });
+
+  // ... 继续添加其他 20 个字段
+
+  console.log('5. 创建 Webhook 工作流（需要手动配置）...');
+  console.log('   请在飞书多维表格中：');
+  console.log('   - 点击"自动化" → "创建自动化"');
+  console.log('   - 触发条件：当收到 Webhook 请求时');
+  console.log('   - 动作：新增记录到 event_logs 表');
+  console.log('   - 保存后获取 Webhook URL 和 Token');
+
+  return {
+    appToken,
+    tableId,
+    bitableUrl: `https://xxx.feishu.cn/base/${appToken}`,
+  };
+}
+
+// 使用示例
+setupFeishuBitable()
+  .then((result) => {
+    console.log('\n✅ 飞书多维表格创建成功！');
+    console.log(`多维表格 URL: ${result.bitableUrl}`);
+    console.log('\n请手动配置 Webhook 工作流，然后将 Webhook URL 和 Token 添加到环境变量。');
+  })
+  .catch((error) => {
+    console.error('❌ 创建失败:', error.message);
+  });
+```
+
+#### 字段配置清单
+
+AI 会自动创建以下 23 个字段：
+
+| 字段名 | 类型 | 配置 |
+|---|---|---|
+| event_id | 文本 | - |
+| event_time | 日期 | 格式：yyyy-MM-dd HH:mm:ss |
+| event_date | 日期 | 格式：yyyy-MM-dd |
+| event_name | 单选 | 选项：visit, login_success, assessment_start, assessment_complete, submit_success, submit_fail |
+| step_order | 数字 | - |
+| flow_id | 文本 | - |
+| session_id | 文本 | - |
+| anonymous_id | 文本 | - |
+| user_id | 文本 | - |
+| page_path | 文本 | - |
+| page_title | 文本 | - |
+| source | 单选 | 选项：direct, wechat, alipay, feishu, search, ad, other |
+| device_type | 单选 | 选项：mobile, desktop |
+| browser | 文本 | - |
+| os | 文本 | - |
+| ip_city | 文本 | - |
+| assessment_id | 文本 | - |
+| submit_id | 文本 | - |
+| is_success | 复选框 | 默认：true |
+| error_code | 文本 | - |
+| error_msg | 多行文本 | - |
+| duration_ms | 数字 | - |
+| extra | 多行文本 | - |
+
+#### 注意事项
+
+- **API 限流**：飞书 API 有频率限制（通常 100 次/分钟），批量创建字段时需要控制速率
+- **Token 管理**：`tenant_access_token` 有效期 2 小时，需要定期刷新
+- **权限检查**：确保应用已获得 `bitable:bitable` 权限并在企业内启用
+- **Webhook 配置**：目前飞书 API 不支持自动创建 Webhook 工作流，需要手动在界面配置
+- **成本考虑**：飞书多维表格免费版有行数限制（通常 5 万行），超出需要升级
+
+#### 手动 vs 自动创建对比
+
+| 维度 | 手动创建 | API 自动创建 |
+|---|---|---|
+| 实施时间 | 10-15 分钟 | 2-3 分钟（代码运行） |
+| 技术门槛 | 低（界面操作） | 中（需要配置应用） |
+| 可重复性 | 低（每次手动） | 高（一键创建） |
+| 错误率 | 中（可能漏字段） | 低（代码保证） |
+| 适用场景 | 一次性创建 | 批量创建、多环境部署 |
+
+**推荐策略**：
+- 如果只创建一次，手动创建更简单
+- 如果需要在多个环境（开发/测试/生产）部署，使用 API 自动创建
+- 如果团队有多个项目需要类似的表格，使用 API 自动创建
+
 ## 事件命名与步骤建模
 
 不要直接照搬某个业务的名字。先抽象出“阶段”和“结果”：

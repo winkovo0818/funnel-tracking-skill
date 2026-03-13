@@ -7,6 +7,7 @@ Project-local OpenCode skill package for building reusable funnel-style tracking
 To use this skill, provide:
 
 1. **Webhook URL** (e.g., Feishu Bitable webhook)
+   - OR **Feishu App Credentials** (app_id + app_secret) for automatic table creation
 2. **Business flow** (e.g., visit → login → submit)
 3. **Project type** (Web/Mini-program/App)
 
@@ -15,6 +16,7 @@ AI will generate:
 - Event tracking calls at key points
 - Environment configuration
 - Test guidelines
+- (Optional) Automatic Feishu Bitable table setup
 
 See "How to Use This SKILL" section in SKILL.md for detailed instructions.
 
@@ -34,6 +36,7 @@ See "How to Use This SKILL" section in SKILL.md for detailed instructions.
 - Central backend `/api/track` ingestion or direct Webhook integration
 - Single-table approach (event_logs) for simplicity
 - Feishu Bitable Webhook integration (recommended for small-medium scale)
+- **Automatic Feishu Bitable table creation via API** (optional)
 - Cross-platform field mapping (Web, H5, Mini-program, App)
 - Privacy compliance checklist and data retention policies
 - Comprehensive test cases for production readiness
@@ -43,6 +46,7 @@ See "How to Use This SKILL" section in SKILL.md for detailed instructions.
 ### Feishu Bitable (Recommended for < 10k events/day)
 - Single-table approach (event_logs only)
 - Webhook integration (no token management)
+- **Automatic table creation via API** (optional)
 - Visual interface for non-technical users
 - Built-in views and filters
 
@@ -54,7 +58,6 @@ See "How to Use This SKILL" section in SKILL.md for detailed instructions.
 ## Recommended Directory Shape
 
 ```text
-.opencode/
   skills/
     funnel-tracking/
       SKILL.md
@@ -68,11 +71,6 @@ See "How to Use This SKILL" section in SKILL.md for detailed instructions.
 If your OpenCode setup supports project-local skills, keep this folder as-is.
 
 If your setup only scans the global skill directory, copy this folder to:
-
-```text
-C:\Users\GOC\.config\opencode\skills\funnel-tracking
-```
-
 Then load it by name as:
 
 ```text
@@ -85,6 +83,7 @@ Use this skill when the task is about:
 
 - adding funnel tracking to a product flow
 - integrating with Feishu Bitable via Webhook
+- **automatically creating Feishu Bitable tables via API**
 - aligning Web, App, H5, or mini-program tracking contracts
 - building a generic tracker helper with retry queue
 - refactoring ad hoc business events into a reusable schema
@@ -99,12 +98,15 @@ When used well, the skill should help produce:
 - tracking calls at key business points (login, submit, etc.)
 - environment configuration (.env or config file)
 - a Feishu Bitable table schema and view recommendations
+- **(optional) automatic Feishu Bitable table creation script**
 - cross-platform field mapping guidelines
 - privacy compliance checklist
 - comprehensive test cases
 - rollout, validation, and debugging notes
 
 ## Example Usage
+
+**Option 1: Manual Webhook Setup**
 
 ```text
 I want to add tracking to my project using Feishu Bitable.
@@ -126,3 +128,28 @@ AI will automatically:
 - Add tracking calls in login/submit pages
 - Generate `.env` configuration
 - Provide Feishu view setup instructions
+
+**Option 2: Automatic Table Creation**
+
+```text
+I want to automatically create Feishu Bitable for tracking.
+
+Feishu App:
+app_id: cli_a1b2c3d4e5f6g7h8
+app_secret: xxxxxxxxxxxxxxxxxxxx
+
+Business flow:
+1. Visit homepage
+2. Login
+3. Start assessment
+4. Submit result
+
+Project type: Web (React)
+```
+
+AI will automatically:
+- Generate setup script to create Bitable + table + fields
+- Create `src/utils/tracker.js`
+- Add tracking calls in login/submit pages
+- Generate `.env` configuration
+- Provide Webhook configuration instructions
